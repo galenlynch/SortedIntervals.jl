@@ -45,18 +45,70 @@ export
 # Utility function
 # =============================================================================
 
+"""
+    clipsize!(a::AbstractVector, n::Integer) -> AbstractVector
+
+Resize `a` to length `n` and release excess memory capacity.
+
+# Examples
+```jldoctest
+julia> v = Vector{Int}(undef, 100); v[1:3] = [1, 2, 3];
+
+julia> clipsize!(v, 3)
+3-element Vector{Int64}:
+ 1
+ 2
+ 3
+```
+"""
 clipsize!(a::AbstractVector, n::Integer) = sizehint!(resize!(a, n), n)
 
 # =============================================================================
 # Intervals
 # =============================================================================
 
+"""
+    check_overlap(start1, stop1, start2, stop2) -> Bool
+    check_overlap(a::NTuple{2,<:Number}, b::NTuple{2,<:Number}) -> Bool
+    check_overlap(intervals::AbstractVector{<:NTuple{2}}) -> Bool
+
+Test whether two intervals overlap, or whether any pair of intervals in a vector overlaps.
+
+Intervals are treated as closed (endpoints are included).
+
+# Examples
+```jldoctest
+julia> check_overlap(1, 5, 3, 8)
+true
+
+julia> check_overlap((1, 5), (6, 8))
+false
+
+julia> check_overlap([(1, 3), (4, 6), (5, 8)])
+true
+```
+"""
 check_overlap(start1, stop1, start2, stop2) = (start1 <= stop2) & (start2 <= stop1)
 
 function check_overlap(tupa::NTuple{2,<:Number}, tupb::NTuple{2,<:Number})
     check_overlap(tupa[1], tupa[2], tupb[1], tupb[2])
 end
 
+"""
+    is_subinterval(startchild, stopchild, startparent, stopparent) -> Bool
+    is_subinterval(child::NTuple{2,<:Number}, parent::NTuple{2,<:Number}) -> Bool
+
+Test whether the child interval is entirely contained within the parent interval.
+
+# Examples
+```jldoctest
+julia> is_subinterval((2, 4), (1, 5))
+true
+
+julia> is_subinterval((2, 6), (1, 5))
+false
+```
+"""
 function is_subinterval(startchild, stopchild, startparent, stopparent)
     (startchild >= startparent) & (stopchild <= stopparent)
 end
@@ -75,11 +127,27 @@ function check_overlap(a::AbstractVector{<:NTuple{2}})
     false
 end
 
-# Assumes sorted
+"""
+    find_overlaps(intervals::AbstractVector{<:Tuple{<:Any,<:Any}}) -> Vector{Vector{Int}}
+
+Find all pairwise overlaps in a vector of intervals. Returns a vector of index lists, where
+`result[i]` contains the indices of all intervals that overlap with interval `i`.
+
+Assumes `intervals` is sorted by start time.
+
+# Examples
+```jldoctest
+julia> find_overlaps([(1, 5), (3, 7), (8, 10)])
+3-element Vector{Vector{Int64}}:
+ [2]
+ [1]
+ []
+```
+"""
 function find_overlaps(a::AbstractVector{<:Tuple{<:Any,<:Any}})
     na = length(a)
     overlap_idx = Vector{Vector{Int}}(undef, na)
-    @inbounds @simd for i = 1:na
+    @inbounds for i = 1:na
         overlap_idx[i] = Vector{Int}()
     end
     @inbounds for i = 1:na
@@ -93,9 +161,26 @@ function find_overlaps(a::AbstractVector{<:Tuple{<:Any,<:Any}})
     overlap_idx
 end
 
+"""
+    find_all_overlapping(intsa, intsb) -> BitVector
+    find_all_overlapping(fa, fb, intsa, intsb) -> BitVector
+
+Return a `BitVector` of length `length(intsa)` indicating which intervals in `intsa` overlap
+with any interval in `intsb`. Optional accessor functions `fa` and `fb` extract `(start, stop)`
+tuples from each element.
+
+Both inputs must be sorted and non-overlapping (see [`intervals_are_ordered`](@ref)).
+
+# Examples
+```jldoctest
+julia> find_all_overlapping([(1, 3), (5, 7), (10, 12)], [(2, 6)])
+3-element BitVector:
+ 1
+ 1
+ 0
+```
+"""
 function find_all_overlapping(fa, fb, intsa, intsb)
-    intervals_are_ordered(fa, intsa) || error("intsa not valid")
-    intervals_are_ordered(fb, intsb) || error("intsb not valid")
     na = length(intsa)
     nb = length(intsb)
     outs = falses(na)
@@ -119,6 +204,21 @@ end
 
 find_all_overlapping(intsa, intsb) = find_all_overlapping(identity, identity, intsa, intsb)
 
+"""
+    interval_intersect(start1, stop1, start2, stop2) -> NTuple{2} | Nothing
+    interval_intersect(a::NTuple{2}, b::NTuple{2}) -> NTuple{2} | Nothing
+
+Return the intersection of two intervals, or `nothing` if they do not overlap.
+
+# Examples
+```jldoctest
+julia> interval_intersect((1, 5), (3, 8))
+(3, 5)
+
+julia> interval_intersect((1, 2), (3, 4)) === nothing
+true
+```
+"""
 function interval_intersect(start1::T, stop1::T, start2::T, stop2::T) where {T}
     ifelse(
         check_overlap(start1, stop1, start2, stop2),
@@ -133,6 +233,21 @@ function interval_intersect(a::NTuple{2}, b::NTuple{2})
     interval_intersect(a[1], a[2], b[1], b[2])
 end
 
+"""
+    interval_intersect_measure(start1, stop1, start2, stop2) -> Number
+    interval_intersect_measure(a::NTuple{2}, b::NTuple{2}) -> Number
+
+Return the length of the intersection of two intervals, or zero if they do not overlap.
+
+# Examples
+```jldoctest
+julia> interval_intersect_measure((1, 5), (3, 8))
+2
+
+julia> interval_intersect_measure((1, 2), (3, 4))
+0
+```
+"""
 function interval_intersect_measure(start1::T, stop1::T, start2::T, stop2::T) where {T}
     ifelse(
         check_overlap(start1, stop1, start2, stop2),
@@ -175,22 +290,69 @@ function _intervals_are_ordered(f, crit, ints)
     ok
 end
 
+"""
+    intervals_are_ordered(ints) -> Bool
+    intervals_are_ordered(f, ints) -> Bool
+
+Check that each interval is well-formed (`start <= stop`), intervals are sorted by start
+time, and no intervals overlap. An optional accessor function `f` extracts `(start, stop)`
+from each element.
+
+See also [`intervals_are_partially_ordered`](@ref).
+
+# Examples
+```jldoctest
+julia> intervals_are_ordered([(1, 3), (4, 6), (7, 9)])
+true
+
+julia> intervals_are_ordered([(1, 5), (3, 7)])
+false
+```
+"""
 intervals_are_ordered(f, ints) = _intervals_are_ordered(f, well_ordered_crit, ints)
 intervals_are_ordered(ints) = intervals_are_ordered(identity, ints)
 
+"""
+    intervals_are_partially_ordered(ints) -> Bool
+    intervals_are_partially_ordered(f, ints) -> Bool
+
+Check that each interval is well-formed and intervals are sorted by start time. Unlike
+[`intervals_are_ordered`](@ref), overlapping intervals are permitted.
+
+# Examples
+```jldoctest
+julia> intervals_are_partially_ordered([(1, 5), (3, 7)])
+true
+
+julia> intervals_are_partially_ordered([(3, 7), (1, 5)])
+false
+```
+"""
 intervals_are_partially_ordered(f, ints) =
     _intervals_are_ordered(f, partially_ordered_crit, ints)
 intervals_are_partially_ordered(ints) = intervals_are_partially_ordered(identity, ints)
 
 """
-Assumes each list is sorted and non-overlapping
+    interval_intersections(intsa, intsb) -> Vector{NTuple{2}}
+
+Compute all pairwise intersections between two collections of intervals. Both inputs must
+be sorted and non-overlapping (see [`intervals_are_ordered`](@ref)). Returns a sorted,
+non-overlapping vector of intersection intervals.
+
+See also [`interval_intersections_overlapping`](@ref) for inputs that may contain overlaps.
+
+# Examples
+```jldoctest
+julia> interval_intersections([(1, 5), (7, 10)], [(3, 8)])
+2-element Vector{Tuple{Int64, Int64}}:
+ (3, 5)
+ (7, 8)
+```
 """
 function interval_intersections(intsa, intsb)
-    intervals_are_ordered(intsa) || error("intsa not valid")
-    intervals_are_ordered(intsb) || error("intsb not valid")
     na = length(intsa)
     nb = length(intsb)
-    outs = similar(intsa, max(na, nb))
+    outs = similar(intsa, na + nb)
     nout = 0
     ib = 1
     for (ab, ae) in intsa
@@ -226,6 +388,19 @@ function flush_growing_intersect_intervals!(outs, nout, working, newminimum)
     new_nout
 end
 
+"""
+    overlap_interval_union(a::NTuple{2}, b::NTuple{2}) -> NTuple{2}
+    overlap_interval_union(ab, ae, bb, be) -> NTuple{2}
+
+Return the bounding interval that covers both `a` and `b`. The inputs are assumed to
+overlap; if they don't, the result spans the gap between them.
+
+# Examples
+```jldoctest
+julia> overlap_interval_union((1, 5), (3, 8))
+(1, 8)
+```
+"""
 overlap_interval_union(ab, ae, bb, be) = (min(ab, bb), max(ae, be))
 overlap_interval_union(inta, intb) =
     overlap_interval_union(inta[1], inta[2], intb[1], intb[2])
@@ -256,9 +431,14 @@ function push_growing_intersect_interval!(working, newint)
     end
 end
 
+"""
+    interval_intersections_overlapping(intsa, intsb) -> Vector{NTuple{2}}
+
+Like [`interval_intersections`](@ref), but allows the input interval lists to contain
+overlapping intervals. Both inputs must still be sorted by start time
+(see [`intervals_are_partially_ordered`](@ref)). Overlapping results are merged.
+"""
 function interval_intersections_overlapping(intsa, intsb)
-    intervals_are_partially_ordered(intsa) || error("intsa not valid")
-    intervals_are_partially_ordered(intsb) || error("intsb not valid")
     na = length(intsa)
     nb = length(intsb)
     outs = similar(intsa, na + nb)
@@ -287,11 +467,51 @@ function interval_intersections_overlapping(intsa, intsb)
     outs
 end
 
+"""
+    measure(a::NTuple{2,<:Number}) -> Number
+    measure(::Nothing) -> Int
+
+Return the length (duration) of an interval `a`, i.e. `a[2] - a[1]`. Returns `0` for
+`nothing`, which is useful when chained with [`interval_intersect`](@ref).
+
+# Examples
+```jldoctest
+julia> measure((3, 7))
+4
+
+julia> measure(nothing)
+0
+```
+"""
 @inline measure(a::NTuple{2,<:Number}) = a[2] - a[1]
 @inline measure(::Nothing) = 0
 
+"""
+    midpoint(a::NTuple{2,<:Number}) -> Number
+
+Return the midpoint of an interval `a`.
+
+# Examples
+```jldoctest
+julia> midpoint((2, 6))
+4.0
+```
+"""
 @inline midpoint(a::NTuple{2,<:Number}) = (a[1] + a[2]) / 2
 
+"""
+    reduce_extrema(a::NTuple{2,T}, b::NTuple{2,T}) -> NTuple{2,T}
+    reduce_extrema(s1, s2, t1, t2) -> NTuple{2}
+
+Return `(min(a[1], b[1]), max(a[2], b[2]))` — the bounding interval that contains both
+input intervals. Useful as a reduction operator over a collection of intervals.
+
+# Examples
+```jldoctest
+julia> reduce_extrema((1, 5), (3, 8))
+(1, 8)
+```
+"""
 function reduce_extrema(s1::T, s2::T, t1::T, t2::T) where {T<:Number}
     return (min(s1, t1), max(s2, t2))
 end
@@ -299,6 +519,22 @@ function reduce_extrema(s::NTuple{2,T}, t::NTuple{2,T}) where {T<:Number}
     return reduce_extrema(s..., t...)
 end
 
+"""
+    extrema_red(a::AbstractVector{<:Number}) -> NTuple{2}
+    extrema_red(a::AbstractArray{<:Number, 2}) -> NTuple{2}
+    extrema_red(a::AbstractVector{<:NTuple{2,Number}}) -> NTuple{2}
+
+Return the overall `(minimum, maximum)` across a collection of intervals or numbers.
+
+For a vector of numbers, equivalent to `extrema`. For a `2×N` matrix, treats each column as
+an interval. For a vector of 2-tuples, finds the global minimum start and maximum stop.
+
+# Examples
+```jldoctest
+julia> extrema_red([(1, 5), (3, 8), (6, 7)])
+(1, 8)
+```
+"""
 extrema_red(a::AbstractVector{<:Number}) = extrema(a)
 
 function extrema_red(a::AbstractArray{<:Number,2})
@@ -326,6 +562,21 @@ function extrema_red(a::A) where {T<:NTuple{2,Number},A<:AbstractVector{T}}
     return (cmin, cmax)
 end
 
+"""
+    clip_int(int_begin, int_end, bound_begin, bound_end) -> NTuple{2}
+    clip_int(input::NTuple{2,<:Number}, bounds::NTuple{2,<:Number}) -> NTuple{2}
+
+Clamp an interval to lie within the given bounds. Each endpoint is clamped independently.
+
+# Examples
+```jldoctest
+julia> clip_int(1, 10, 3, 8)
+(3, 8)
+
+julia> clip_int((5, 12), (0, 10))
+(5, 10)
+```
+"""
 function clip_int(
     int_begin::Number,
     int_end::Number,
@@ -339,12 +590,24 @@ function clip_int(input::NTuple{2,<:Number}, bounds::NTuple{2,<:Number})
 end
 
 """
-    join_intervals!(ints::Vector{NTuple{2, <:Number}}, min_gap)
+    join_intervals!(ints::AbstractVector{<:NTuple{2,<:Number}}, min_gap=0) -> AbstractVector
+    join_intervals!(f, ints::AbstractVector{<:NTuple{2,<:Number}}, min_gap=0) -> AbstractVector
 
-Join a list of sorted intervals, `ints`, if the gap between successive intervals
-is less than `min_gap`. Mutates input in-place
+Merge successive intervals in the sorted vector `ints` when the gap between them is at most
+`min_gap`. Mutates and resizes `ints` in-place. An optional function `f` is applied to each
+merged interval before storing.
 
-Assumes ints are sorted by their first index.
+Assumes `ints` is sorted by start time. See [`join_intervals`](@ref) for a non-mutating version.
+
+# Examples
+```jldoctest
+julia> ints = [(1, 3), (4, 6), (10, 12)];
+
+julia> join_intervals!(ints, 1)
+2-element Vector{Tuple{Int64, Int64}}:
+ (1, 6)
+ (10, 12)
+```
 """
 function join_intervals! end
 
@@ -369,7 +632,7 @@ function join_intervals!(
             ints[outno] = f((joined_start, prev_end))
             joined_start = int[1]
         end
-        prev_end = int[2]
+        prev_end = max(prev_end, int[2])
     end
     outno += 1
     ints[outno] = f((joined_start, prev_end))
@@ -379,14 +642,42 @@ end
 join_intervals!(ints::AbstractVector, args...) = join_intervals!(identity, ints, args...)
 
 """
-    join_intervals(f, ints::Vector{NTuple{2, <:Number}}, min_gap)
+    join_intervals(ints::AbstractVector{<:NTuple{2,<:Number}}, min_gap=0) -> Vector
+    join_intervals(f, ints::AbstractVector{<:NTuple{2,<:Number}}, min_gap=0) -> Vector
 
-Like [`join_intervals!`](@ref), but does not mutate input.
+Non-mutating version of [`join_intervals!`](@ref). Returns a new vector with successive
+intervals merged when the gap between them is at most `min_gap`.
+
+# Examples
+```jldoctest
+julia> join_intervals([(1, 3), (4, 6), (10, 12)], 1)
+2-element Vector{Tuple{Int64, Int64}}:
+ (1, 6)
+ (10, 12)
+```
 """
 join_intervals(f, ints::AbstractVector, args...) = join_intervals!(f, copy(ints), args...)
 
 join_intervals(ints::AbstractVector, args...) = join_intervals(identity, ints, args...)
 
+"""
+    interval_complements(start, stop, intervals, contraction=0) -> Vector{NTuple{2}}
+
+Find the gaps between `intervals` within the bounding interval `[start, stop]`. Each
+complement boundary is contracted inward by `contraction` (useful for excluding edge
+artifacts).
+
+Assumes `intervals` is sorted and non-overlapping.
+
+# Examples
+```jldoctest
+julia> interval_complements(0, 10, [(2, 4), (6, 8)])
+3-element Vector{Tuple{Int64, Int64}}:
+ (0, 2)
+ (4, 6)
+ (8, 10)
+```
+"""
 function interval_complements(
     start::T,
     stop::T,
@@ -431,18 +722,37 @@ function interval_complements(
     interval_complements(convert(T, start), convert(T, stop), intervals, args...)
 end
 
+"""
+    mask_events(event_times::AbstractVector{<:Number}, start, stop) -> SubArray
+
+Return a view of `event_times` containing only elements within `[start, stop]`.
+Uses binary search via [`interval_indices`](@ref). Assumes `event_times` is sorted.
+
+# Examples
+```jldoctest
+julia> mask_events([1, 3, 5, 7, 9], 2, 6)
+2-element view(::Vector{Int64}, 2:3) with eltype Int64:
+ 3
+ 5
+```
+"""
 function mask_events(event_times::AbstractVector{<:Number}, start, stop)
     i_b, i_e = interval_indices(event_times, start, stop)
     view(event_times, i_b:i_e)
 end
 
 """
-    interval_indices(
-        basis::Union{<:AbstractVector, AbstractRange}, start::Number, stop::Number
-    ) -> i_b, i_e
+    interval_indices(basis, start::Number, stop::Number) -> (i_b, i_e)
+    interval_indices(basis, bounds::NTuple{2,<:Number}) -> (i_b, i_e)
 
-Find the indices in `basis` that correspond to the interval specified by `start`
- and `stop`.
+Find the first and last indices in the sorted collection `basis` whose values fall within
+`[start, stop]`. Uses binary search (`searchsortedfirst` / `searchsortedlast`).
+
+# Examples
+```jldoctest
+julia> interval_indices([10, 20, 30, 40, 50], 15, 35)
+(2, 3)
+```
 """
 function interval_indices(
     basis::Union{<:AbstractVector,AbstractRange},
@@ -457,11 +767,21 @@ interval_indices(basis::AbstractVector, bnds::NTuple{2,<:Number}) =
     interval_indices(basis, bnds[1], bnds[2])
 
 """
-    throttle(xs::AbstractVector{T}, min_gap::Number) where T<:Number ->
-    Vector{NTuple{2, T}}
+    throttle(xs::AbstractVector{T}, min_gap::Number) -> Vector{NTuple{2,T}} where T<:Number
 
-Join points in `x` into ranges, if the difference between neighboring elements
-is less than `min_gap`. Assumes `x` is sorted.
+Group sorted points into intervals by merging consecutive points that are within `min_gap`
+of each other. Each output interval spans from the first to last point in its group.
+
+Assumes `xs` is sorted.
+
+# Examples
+```jldoctest
+julia> throttle([1, 2, 3, 10, 11, 20], 2)
+3-element Vector{Tuple{Int64, Int64}}:
+ (1, 3)
+ (10, 11)
+ (20, 20)
+```
 """
 function throttle(xs::AbstractVector{T}, min_gap::Number) where {T<:Number}
     nx = length(xs)
@@ -486,10 +806,20 @@ function throttle(xs::AbstractVector{T}, min_gap::Number) where {T<:Number}
 end
 
 """
-    intervals_diff(ints_a, ints_b) -> ints_out
+    intervals_diff(ints_a, ints_b) -> Vector{NTuple{2}}
 
-Find the 'set diff' of the intervals in `ints_a` and `ints_b`. Assumes both
-inputs are sorted.
+Compute the set difference of two sorted interval collections: the portions of `ints_a`
+that are not covered by any interval in `ints_b`. Both inputs must be sorted and
+non-overlapping.
+
+# Examples
+```jldoctest
+julia> intervals_diff([(1, 10)], [(3, 5), (7, 8)])
+3-element Vector{Tuple{Int64, Int64}}:
+ (1, 3)
+ (5, 7)
+ (8, 10)
+```
 """
 function intervals_diff(
     ints_a::AbstractVector{<:NTuple{2,S}},
@@ -536,19 +866,55 @@ function intervals_diff(
     ints_out
 end
 
+"""
+    expand_intervals!(ints_in::AbstractVector{<:NTuple{2,<:Number}}, expand::Number) -> AbstractVector
+
+Expand each interval by `expand / 2` on each side, then merge any resulting overlaps.
+Mutates and resizes `ints_in` in-place.
+
+See [`expand_intervals`](@ref) for a non-mutating version.
+
+# Examples
+```jldoctest
+julia> ints = [(2, 4), (8, 10)];
+
+julia> expand_intervals!(ints, 2)
+2-element Vector{Tuple{Int64, Int64}}:
+ (1, 5)
+ (7, 11)
+```
+"""
 function expand_intervals!(ints_in::AbstractVector{<:NTuple{2,<:Number}}, expand::Number)
     half_exp = expand / 2
     f = ((b, e),) -> (b - half_exp, e + half_exp)
     join_intervals!(f, ints_in, expand)
     ints_in
 end
+"""
+    expand_intervals(ints_in, expand::Number) -> Vector
+
+Non-mutating version of [`expand_intervals!`](@ref).
+"""
 expand_intervals(ints_in, expand) = expand_intervals!(copy(ints_in), expand)
 
 """
-    parse_ranges_str(s::AbstractString)
+    parse_ranges_str(s::AbstractString) -> Vector{Int}
 
-Parse strings like "3", "1-5", or "1, 2-10, 12-30" into a vector of the integers
-in specified ranges.
+Parse a comma-separated string of integers and integer ranges into a sorted vector of
+unique integers. Ranges are specified with hyphens.
+
+# Examples
+```jldoctest
+julia> parse_ranges_str("1-3, 7, 10-12")
+7-element Vector{Int64}:
+  1
+  2
+  3
+  7
+ 10
+ 11
+ 12
+```
 """
 function parse_ranges_str(s::AbstractString)
     bnds = map(split(s, ',', keepempty = false)) do c
@@ -572,12 +938,46 @@ function parse_ranges_str(s::AbstractString)
     sort!(collect(ranges))
 end
 
+"""
+    measure_to_bounds(start::Number, duration::Number) -> NTuple{2}
+    measure_to_bounds(t::NTuple{2}) -> NTuple{2}
+    measure_to_bounds(ts::AbstractArray{<:NTuple{2}}) -> AbstractArray
+    measure_to_bounds(starts::AbstractArray, durations::AbstractArray) -> AbstractArray
+
+Convert a `(start, duration)` representation to a `(start, stop)` representation, where
+`stop = start + duration`.
+
+# Examples
+```jldoctest
+julia> measure_to_bounds(5, 3)
+(5, 8)
+
+julia> measure_to_bounds((5, 3))
+(5, 8)
+```
+"""
 measure_to_bounds(a::Number, b::Number) = (a, a + b)
 measure_to_bounds(t::NTuple{2}) = measure_to_bounds(t[1], t[2])
 measure_to_bounds(ts::AbstractArray{<:NTuple{2}}) = measure_to_bounds.(ts)
 measure_to_bounds(a::AbstractArray, b::AbstractArray) = measure_to_bounds.(a, b)
 
-"Clip an interval while trying to maintain its duration"
+"""
+    clip_interval_duration(reqb, reqe, boundmin, boundmax) -> NTuple{2}
+    clip_interval_duration(int::NTuple{2}, bounds::NTuple{2}) -> NTuple{2}
+
+Clip an interval to lie within `[boundmin, boundmax]` while attempting to preserve its
+duration. The interval is shifted to fit within the bounds when possible. If the requested
+interval is longer than the bounds, it is clamped to exactly `[boundmin, boundmax]`.
+
+# Examples
+```jldoctest
+julia> clip_interval_duration(8, 12, 0, 10)
+(6, 10)
+
+julia> clip_interval_duration(-2, 5, 0, 10)
+(0, 7)
+```
+"""
 function clip_interval_duration(
     reqb::T,
     reqe::T,
@@ -601,8 +1001,21 @@ clip_interval_duration(reqb::Number, reqe, boundmax) =
 clip_interval_duration(int::NTuple{2}, intb::NTuple{2}) =
     clip_interval_duration(int..., intb...)
 clip_interval_duration(int::NTuple{2}, boundmin, boundmax) =
-    clip_interval_duration(int[1], int[2], boundmax)
+    clip_interval_duration(int[1], int[2], boundmin, boundmax)
 
+"""
+    maximum_interval_overlap(xs::AbstractVector{NTuple{2,T}}, y::NTuple{2,T}) -> (index, overlap)
+
+Find the interval in `xs` that has the greatest overlap with the target interval `y`.
+Returns the index of the best-matching interval and the overlap measure. Returns `(0, typemin(T))`
+if `xs` is empty.
+
+# Examples
+```jldoctest
+julia> maximum_interval_overlap([(1, 5), (4, 10), (12, 15)], (3, 8))
+(2, 4)
+```
+"""
 function maximum_interval_overlap(xs::AbstractVector{NTuple{2,T}}, y::NTuple{2,T}) where {T}
     best_ndx = 0
     best_overlap = typemin(T)
