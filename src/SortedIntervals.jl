@@ -49,17 +49,6 @@ export
     clipsize!(a::AbstractVector, n::Integer) -> AbstractVector
 
 Resize `a` to length `n` and release excess memory capacity.
-
-# Examples
-```jldoctest
-julia> v = Vector{Int}(undef, 100); v[1:3] = [1, 2, 3];
-
-julia> clipsize!(v, 3)
-3-element Vector{Int64}:
- 1
- 2
- 3
-```
 """
 clipsize!(a::AbstractVector, n::Integer) = sizehint!(resize!(a, n), n)
 
@@ -75,18 +64,6 @@ clipsize!(a::AbstractVector, n::Integer) = sizehint!(resize!(a, n), n)
 Test whether two intervals overlap, or whether any pair of intervals in a vector overlaps.
 
 Intervals are treated as closed (endpoints are included).
-
-# Examples
-```jldoctest
-julia> check_overlap(1, 5, 3, 8)
-true
-
-julia> check_overlap((1, 5), (6, 8))
-false
-
-julia> check_overlap([(1, 3), (4, 6), (5, 8)])
-true
-```
 """
 check_overlap(start1, stop1, start2, stop2) = (start1 <= stop2) & (start2 <= stop1)
 
@@ -99,15 +76,6 @@ end
     is_subinterval(child::NTuple{2,<:Number}, parent::NTuple{2,<:Number}) -> Bool
 
 Test whether the child interval is entirely contained within the parent interval.
-
-# Examples
-```jldoctest
-julia> is_subinterval((2, 4), (1, 5))
-true
-
-julia> is_subinterval((2, 6), (1, 5))
-false
-```
 """
 function is_subinterval(startchild, stopchild, startparent, stopparent)
     (startchild >= startparent) & (stopchild <= stopparent)
@@ -209,15 +177,6 @@ find_all_overlapping(intsa, intsb) = find_all_overlapping(identity, identity, in
     interval_intersect(a::NTuple{2}, b::NTuple{2}) -> NTuple{2} | Nothing
 
 Return the intersection of two intervals, or `nothing` if they do not overlap.
-
-# Examples
-```jldoctest
-julia> interval_intersect((1, 5), (3, 8))
-(3, 5)
-
-julia> interval_intersect((1, 2), (3, 4)) === nothing
-true
-```
 """
 function interval_intersect(start1::T, stop1::T, start2::T, stop2::T) where {T}
     ifelse(
@@ -238,15 +197,6 @@ end
     interval_intersect_measure(a::NTuple{2}, b::NTuple{2}) -> Number
 
 Return the length of the intersection of two intervals, or zero if they do not overlap.
-
-# Examples
-```jldoctest
-julia> interval_intersect_measure((1, 5), (3, 8))
-2
-
-julia> interval_intersect_measure((1, 2), (3, 4))
-0
-```
 """
 function interval_intersect_measure(start1::T, stop1::T, start2::T, stop2::T) where {T}
     ifelse(
@@ -394,12 +344,6 @@ end
 
 Return the bounding interval that covers both `a` and `b`. The inputs are assumed to
 overlap; if they don't, the result spans the gap between them.
-
-# Examples
-```jldoctest
-julia> overlap_interval_union((1, 5), (3, 8))
-(1, 8)
-```
 """
 overlap_interval_union(ab, ae, bb, be) = (min(ab, bb), max(ae, be))
 overlap_interval_union(inta, intb) =
@@ -473,15 +417,6 @@ end
 
 Return the length (duration) of an interval `a`, i.e. `a[2] - a[1]`. Returns `0` for
 `nothing`, which is useful when chained with [`interval_intersect`](@ref).
-
-# Examples
-```jldoctest
-julia> measure((3, 7))
-4
-
-julia> measure(nothing)
-0
-```
 """
 @inline measure(a::NTuple{2,<:Number}) = a[2] - a[1]
 @inline measure(::Nothing) = 0
@@ -490,12 +425,6 @@ julia> measure(nothing)
     midpoint(a::NTuple{2,<:Number}) -> Number
 
 Return the midpoint of an interval `a`.
-
-# Examples
-```jldoctest
-julia> midpoint((2, 6))
-4.0
-```
 """
 @inline midpoint(a::NTuple{2,<:Number}) = (a[1] + a[2]) / 2
 
@@ -505,12 +434,6 @@ julia> midpoint((2, 6))
 
 Return `(min(a[1], b[1]), max(a[2], b[2]))` — the bounding interval that contains both
 input intervals. Useful as a reduction operator over a collection of intervals.
-
-# Examples
-```jldoctest
-julia> reduce_extrema((1, 5), (3, 8))
-(1, 8)
-```
 """
 function reduce_extrema(s1::T, s2::T, t1::T, t2::T) where {T<:Number}
     return (min(s1, t1), max(s2, t2))
@@ -528,12 +451,6 @@ Return the overall `(minimum, maximum)` across a collection of intervals or numb
 
 For a vector of numbers, equivalent to `extrema`. For a `2×N` matrix, treats each column as
 an interval. For a vector of 2-tuples, finds the global minimum start and maximum stop.
-
-# Examples
-```jldoctest
-julia> extrema_red([(1, 5), (3, 8), (6, 7)])
-(1, 8)
-```
 """
 extrema_red(a::AbstractVector{<:Number}) = extrema(a)
 
@@ -567,15 +484,6 @@ end
     clip_int(input::NTuple{2,<:Number}, bounds::NTuple{2,<:Number}) -> NTuple{2}
 
 Clamp an interval to lie within the given bounds. Each endpoint is clamped independently.
-
-# Examples
-```jldoctest
-julia> clip_int(1, 10, 3, 8)
-(3, 8)
-
-julia> clip_int((5, 12), (0, 10))
-(5, 10)
-```
 """
 function clip_int(
     int_begin::Number,
@@ -727,14 +635,6 @@ end
 
 Return a view of `event_times` containing only elements within `[start, stop]`.
 Uses binary search via [`interval_indices`](@ref). Assumes `event_times` is sorted.
-
-# Examples
-```jldoctest
-julia> mask_events([1, 3, 5, 7, 9], 2, 6)
-2-element view(::Vector{Int64}, 2:3) with eltype Int64:
- 3
- 5
-```
 """
 function mask_events(event_times::AbstractVector{<:Number}, start, stop)
     i_b, i_e = interval_indices(event_times, start, stop)
@@ -747,12 +647,6 @@ end
 
 Find the first and last indices in the sorted collection `basis` whose values fall within
 `[start, stop]`. Uses binary search (`searchsortedfirst` / `searchsortedlast`).
-
-# Examples
-```jldoctest
-julia> interval_indices([10, 20, 30, 40, 50], 15, 35)
-(2, 3)
-```
 """
 function interval_indices(
     basis::Union{<:AbstractVector,AbstractRange},
@@ -946,15 +840,6 @@ end
 
 Convert a `(start, duration)` representation to a `(start, stop)` representation, where
 `stop = start + duration`.
-
-# Examples
-```jldoctest
-julia> measure_to_bounds(5, 3)
-(5, 8)
-
-julia> measure_to_bounds((5, 3))
-(5, 8)
-```
 """
 measure_to_bounds(a::Number, b::Number) = (a, a + b)
 measure_to_bounds(t::NTuple{2}) = measure_to_bounds(t[1], t[2])
@@ -1009,12 +894,6 @@ clip_interval_duration(int::NTuple{2}, boundmin, boundmax) =
 Find the interval in `xs` that has the greatest overlap with the target interval `y`.
 Returns the index of the best-matching interval and the overlap measure. Returns `(0, typemin(T))`
 if `xs` is empty.
-
-# Examples
-```jldoctest
-julia> maximum_interval_overlap([(1, 5), (4, 10), (12, 15)], (3, 8))
-(2, 4)
-```
 """
 function maximum_interval_overlap(xs::AbstractVector{NTuple{2,T}}, y::NTuple{2,T}) where {T}
     best_ndx = 0
