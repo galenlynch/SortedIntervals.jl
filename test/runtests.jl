@@ -204,6 +204,23 @@ using Test
         @test clip_int(3.0, 7.0, 2.0, 8.0) == (3.0, 7.0)
     end
 
+    @testset "relative_interval" begin
+        # basic shift and clamp
+        @test relative_interval(5.0, 10.0, 5.0, 15.0) == (0.0, 5.0)
+        # interval extending before reference start is clamped
+        @test relative_interval(3.0, 8.0, 5.0, 15.0) == (0.0, 3.0)
+        # interval extending past reference end is clamped
+        @test relative_interval(12.0, 20.0, 5.0, 15.0) == (7.0, 10.0)
+        # completely outside (before) -> zero-length at 0
+        @test relative_interval(0.0, 2.0, 5.0, 15.0) == (0.0, 0.0)
+        # completely outside (after) -> zero-length at ref duration
+        @test relative_interval(20.0, 25.0, 5.0, 15.0) == (10.0, 10.0)
+        # tuple form
+        @test relative_interval((5.0, 10.0), (5.0, 15.0)) == (0.0, 5.0)
+        # integer inputs
+        @test relative_interval(3, 8, 5, 15) == (0, 3)
+    end
+
     @testset "intervals_are_ordered" begin
         @test intervals_are_ordered([(1.0, 2.0), (3.0, 4.0)])
         @test !intervals_are_ordered([(1.0, 5.0), (3.0, 4.0)])

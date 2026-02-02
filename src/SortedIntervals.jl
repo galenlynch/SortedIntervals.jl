@@ -24,6 +24,7 @@ export
     measure,
     midpoint,
     clip_int,
+    relative_interval,
     throttle,
     mask_events,
     interval_indices,
@@ -495,6 +496,21 @@ function clip_int(
 end
 function clip_int(input::NTuple{2,<:Number}, bounds::NTuple{2,<:Number})
     clip_int(input..., bounds...)
+end
+
+"""
+    relative_interval(interval, reference) -> NTuple{2}
+    relative_interval(int_begin, int_end, ref_begin, ref_end) -> NTuple{2}
+
+Express `interval` in coordinates relative to `reference`, clamped to
+`(0, measure(reference))`. Equivalent to shifting `interval` so that
+`ref_begin` maps to zero, then clipping to the reference duration.
+"""
+function relative_interval(int_begin::Number, int_end::Number, ref_begin::Number, ref_end::Number)
+    clip_int(int_begin - ref_begin, int_end - ref_begin, 0, ref_end - ref_begin)
+end
+function relative_interval(interval::NTuple{2,<:Number}, reference::NTuple{2,<:Number})
+    relative_interval(interval..., reference...)
 end
 
 """
